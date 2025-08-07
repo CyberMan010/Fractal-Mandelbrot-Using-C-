@@ -1,70 +1,83 @@
 #include <SFML/Graphics.hpp>
 #include <complex>
-#include <iostream>
+#include <thread>
 
 const int WIDTH = 800;
 const int HEIGHT = 600;
-const int MAX_ITER = 200;
+const int MAX_ITER = 500;
 
-double zoom = 200.0;            // ﬂ· „« ﬂ»—° ﬂ· „« ⁄„· “Ê„ √ﬂ —
-double offsetX = -WIDTH / 2.0;  // ≈“«Õ… ··Ì”«—
-double offsetY = -HEIGHT / 2.0; // ≈“«Õ… ··√⁄·Ï
+double zoom = 1000.0;
+double offsetX = -WIDTH / 2.0;
+double offsetY = -HEIGHT / 2.0;
 
-//  ÕÊÌ· »ﬂ”· ≈·Ï —ﬁ„ „—ﬂ»
+sf::Image image;
+
 std::complex<double> pixelToComplex(int x, int y) {
     double real = (x + offsetX) / zoom;
     double imag = (y + offsetY) / zoom;
-    return std::complex<double>(real, imag);
+    return { real, imag };
 }
 
-// Õ”«» ⁄œœ «· ﬂ—«—«  ··Â—Ê»
 int mandelbrot(std::complex<double> c) {
     std::complex<double> z = 0;
     int iter = 0;
-    while (abs(z) <= 2.0 && iter < MAX_ITER) {
+    while (std::abs(z) <= 2.0 && iter < MAX_ITER) {
         z = z * z + c;
-        iter++;
+        ++iter;
     }
     return iter;
 }
 
-//  ÕÊÌ· ⁄œœ «· ﬂ—«—«  ≈·Ï ·Ê‰
 sf::Color getColor(int iter) {
     if (iter == MAX_ITER) return sf::Color::Black;
-    return sf::Color(5 * iter, 10 * iter, 15 * iter); // √·Ê«‰ „ œ—Ã…
+    return sf::Color(10 * iter % 255, 5 * iter % 255, 15 * iter % 255);
 }
 
-int main() {
-    sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Mandelbrot Explorer");
-    sf::Image image;
-    image.create(WIDTH, HEIGHT);
-    sf::Texture texture;
-    sf::Sprite sprite;
-
-    // √Ê· —”„
-    for (int x = 0; x < WIDTH; x++) {
-        for (int y = 0; y < HEIGHT; y++) {
+void drawMandelbrot(int startY, int endY) {
+    for (int y = startY; y < endY; ++y) {
+        for (int x = 0; x < WIDTH; ++x) {
             std::complex<double> c = pixelToComplex(x, y);
             int iter = mandelbrot(c);
             image.setPixel(x, y, getColor(iter));
         }
     }
+}
 
+void generateImageWithThreads(int threadCount = 4) {
+    std::vector<std::thread> threads;
+    int rowsPerThread = HEIGHT / threadCount;
+
+    for (int i = 0; i < threadCount; ++i) {
+        int startY = i * rowsPerThread;
+        int endY = (i == threadCount - 1) ? HEIGHT : startY + rowsPerThread;
+        threads.emplace_back(drawMandelbrot, startY, endY);
+    }
+
+    for (auto& t : threads) t.join();
+}
+
+int main() {
+    sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Fast Mandelbrot");
+    image.create(WIDTH, HEIGHT);
+
+    sf::Texture texture;
+    sf::Sprite sprite;
+
+    // √Ê· —”„
+    generateImageWithThreads();
     texture.loadFromImage(image);
     sprite.setTexture(texture);
 
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
-            // ≈€·«ﬁ
             if (event.type == sf::Event::Closed)
                 window.close();
 
-            // “ÊÊÊÊ„ »«·„«Ê”
+            // Zoom with scroll
             if (event.type == sf::Event::MouseWheelScrolled) {
-                double factor = event.mouseWheelScroll.delta > 0 ? 1.1 : 0.9;
+                double factor = (event.mouseWheelScroll.delta > 0) ? 1.2 : 0.8;
 
-                // ‰Õ”» „—ﬂ“ «·“Ê„ ÕÊ· „ƒ‘— «·„«Ê”
                 int mouseX = event.mouseWheelScroll.x;
                 int mouseY = event.mouseWheelScroll.y;
 
@@ -76,14 +89,7 @@ int main() {
                 offsetX = worldX * zoom - mouseX;
                 offsetY = worldY * zoom - mouseY;
 
-                //  ÕœÌÀ «·’Ê—…
-                for (int x = 0; x < WIDTH; x++) {
-                    for (int y = 0; y < HEIGHT; y++) {
-                        std::complex<double> c = pixelToComplex(x, y);
-                        int iter = mandelbrot(c);
-                        image.setPixel(x, y, getColor(iter));
-                    }
-                }
+                generateImageWithThreads(); // ≈⁄«œ… «·—”„ »”—⁄…
                 texture.loadFromImage(image);
                 sprite.setTexture(texture);
             }
